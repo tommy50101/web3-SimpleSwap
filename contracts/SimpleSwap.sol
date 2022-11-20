@@ -5,13 +5,14 @@ import { ISimpleSwap } from "./interface/ISimpleSwap.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "hardhat/console.sol";
 
-contract SimpleSwap is ISimpleSwap, ERC20 {
+contract SimpleSwap is ISimpleSwap, ERC20, ReentrancyGuard {
     ERC20 public tokenA;
     ERC20 public tokenB;
-    uint256 public reserve0;
-    uint256 public reserve1;
+    uint256 public reserveA;
+    uint256 public reserveB;
 
     constructor(address _tokenA, address _tokenB) ERC20("TestErc20Token", "TET") {
         require(_checkContract(_tokenA), "SimpleSwap: TOKENA_IS_NOT_CONTRACT");
@@ -43,7 +44,7 @@ contract SimpleSwap is ISimpleSwap, ERC20 {
         address tokenIn,
         address tokenOut,
         uint256 amountIn
-    ) external returns (uint256) {
+    ) external nonReentrant returns (uint256) {
         // forces error, when tokenIn is not tokenA or tokenB
         require((tokenIn == address(tokenA) || tokenIn == address(tokenB)), "SimpleSwap: INVALID_TOKEN_IN");
         // forces error, when tokenOut is not tokenA or tokenB
@@ -83,10 +84,10 @@ contract SimpleSwap is ISimpleSwap, ERC20 {
         // should be able to swap from tokenA to tokenB / tokenB to tokenA
         ERC20(tokenIn).transferFrom(sender, address(this), amountIn);
         ERC20(tokenOut).transfer(sender, amountOut);
-        
+
         // Update reserves
-        reserve0 = tokenA.balanceOf(address(this));
-        reserve1 = tokenB.balanceOf(address(this));
+        reserveA = tokenA.balanceOf(address(this));
+        reserveB = tokenB.balanceOf(address(this));
 
         emit Swap(sender, tokenIn, tokenOut, amountIn, amountOut);
 
@@ -100,78 +101,78 @@ contract SimpleSwap is ISimpleSwap, ERC20 {
     /// @return amountB The actually amount of tokenB added
     /// @return liquidity The amount of liquidity minted
     function addLiquidity(uint256 amountAIn, uint256 amountBIn)
-        external
+        external nonReentrant
         returns (
             uint256,
             uint256,
             uint256
         )
     {
-        // forces error, when lp token amount is zero
-        // should be able to remove liquidity when lp token amount greater than zero
+        // forces error, when tokenA amount is zero
+        // forces error, when tokenB amount is zero
         require(amountAIn > 0 && amountBIn > 0, "SimpleSwap: INSUFFICIENT_INPUT_AMOUNT");
 
-        address sender = _msgSender();
+        address _sender = _msgSender();
         uint256 _totalSupply = totalSupply();
-        uint256 liquidity = 0;
-        uint256 actualAmountA = amountAIn;
-        uint256 actualAmountB = amountBIn;
+        uint256 _liquidity;
+        uint256 _actualAmountAIn = amountAIn;
+        uint256 _actualAmountBIn = amountBIn;
 
         if (_totalSupply == 0) {
-            liquidity = Math.sqrt(amountAIn * amountBIn);
+            _liquidity = Math.sqrt(amountAIn * amountBIn);
         } else {
-            liquidity = Math.min((amountAIn * _totalSupply) / reserve0, (amountBIn * _totalSupply) / reserve1);
-            actualAmountA = (liquidity * reserve0) / _totalSupply;
-            actualAmountB = (liquidity * reserve1) / _totalSupply;
+            _liquidity = Math.min((amountAIn * _totalSupply) / reserveA, (amountBIn * _totalSupply) / reserveB);
+            _actualAmountAIn = (_liquidity * reserveA) / _totalSupply;
+            _actualAmountBIn = (_liquidity * reserveB) / _totalSupply;
         }
 
-        tokenA.transferFrom(sender, address(this), actualAmountA);
-        tokenB.transferFrom(sender, address(this), actualAmountB);
+        tokenA.transferFrom(_sender, address(this), _actualAmountAIn);
+        tokenB.transferFrom(_sender, address(this), _actualAmountBIn);
 
         // Update reserves
-        reserve0 = tokenA.balanceOf(address(this));
-        reserve1 = tokenB.balanceOf(address(this));
+        reserveA = tokenA.balanceOf(address(this));
+        reserveB = tokenB.balanceOf(address(this));
 
-        _mint(sender, liquidity);
+        _mint(_sender, _liquidity);
 
-        emit AddLiquidity(sender, actualAmountA, actualAmountB, liquidity);
+        emit AddLiquidity(_sender, _actualAmountAIn, _actualAmountBIn, _liquidity);
 
-        return (actualAmountA, actualAmountB, liquidity);
+        return (_actualAmountAIn, _actualAmountBIn, _liquidity);
     }
 
     /// @notice Remove liquidity from the pool
     /// @param liquidity The amount of liquidity to remove
     /// @return amountA The amount of tokenA received
     /// @return amountB The amount of tokenB received
-    function removeLiquidity(uint256 liquidity) external returns (uint256, uint256) {
+    function removeLiquidity(uint256 liquidity) external nonReentrant returns (uint256, uint256) {
         // forces error, when lp token amount is zero
         require(liquidity > 0, "SimpleSwap: INSUFFICIENT_LIQUIDITY_BURNED");
 
-        address sender = _msgSender();
+        address _sender = _msgSender();
         uint256 _totalSupply = totalSupply();
-        uint256 amountA = (liquidity * reserve0) / _totalSupply;
-        uint256 amountB = (liquidity * reserve1) / _totalSupply;
+        uint256 _amountAOut = (liquidity * reserveA) / _totalSupply;
+        uint256 _amountBOut = (liquidity * reserveB) / _totalSupply;
 
-        _transfer(sender, address(this), liquidity);
+        _transfer(_sender, address(this), liquidity);
         _burn(address(this), liquidity);
 
-        tokenA.transfer(sender, amountA);
-        tokenB.transfer(sender, amountB);
+        tokenA.transfer(_sender, _amountAOut);
+        tokenB.transfer(_sender, _amountBOut);
 
         // Update reserves
-        reserve0 = tokenA.balanceOf(address(this));
-        reserve1 = tokenB.balanceOf(address(this));
+        reserveA = tokenA.balanceOf(address(this));
+        reserveB = tokenB.balanceOf(address(this));
 
-        emit RemoveLiquidity(sender, amountA, amountB, liquidity);
+        emit RemoveLiquidity(_sender, _amountAOut, _amountBOut, liquidity);
 
-        return (amountA, amountB);
+        return (_amountAOut, _amountBOut);
     }
 
     /// @notice Get the reserves of the pool
-    /// @return reserve0 The reserve of tokenA
-    /// @return reserve1 The reserve of tokenB
+    /// @return reserveA The reserve of tokenA
+    /// @return reserveB The reserve of tokenB
     function getReserves() external view returns (uint256, uint256) {
-        return (reserve0, reserve1);
+        return (reserveA, reserveB);
     }
 
     /// @notice Get the address of tokenA
