@@ -141,7 +141,7 @@ contract SimpleSwap is ISimpleSwap, ERC20, ReentrancyGuard {
         tokenA.transferFrom(_sender, address(this), _actualAmountAIn);
         tokenB.transferFrom(_sender, address(this), _actualAmountBIn);
 
-        // Action mint (Add liquidity)
+        // Action add liquidity
         _mint(_sender, _liquidity);
 
         emit AddLiquidity(_sender, _actualAmountAIn, _actualAmountBIn, _liquidity);
@@ -162,12 +162,13 @@ contract SimpleSwap is ISimpleSwap, ERC20, ReentrancyGuard {
         uint256 _amountAOut = (_liquidity * reserveA) / _totalSupply;
         uint256 _amountBOut = (_liquidity * reserveB) / _totalSupply;
 
-        _transfer(_sender, address(this), _liquidity);
-        _burn(address(this), _liquidity);
-
         // Update reserves
         reserveA = tokenA.balanceOf(address(this)) - _amountAOut;
         reserveB = tokenB.balanceOf(address(this)) - _amountBOut;
+
+        // Action remove liquidity
+        _transfer(_sender, address(this), _liquidity);
+        _burn(address(this), _liquidity);
 
         // Action transfer out
         tokenA.transfer(_sender, _amountAOut);
