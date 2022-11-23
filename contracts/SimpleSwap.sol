@@ -58,7 +58,7 @@ contract SimpleSwap is ISimpleSwap, ERC20, ReentrancyGuard {
         uint256 originTokenIn = ERC20(tokenIn).balanceOf(address(this));
         uint256 originTokenOut = ERC20(tokenOut).balanceOf(address(this));
 
-        // 算法1 (剪法後面那串的結果的小數點會被捨去，相剪出來的值會大於實際可以轉出的值，所以這種算法會有錯):
+        // 算法1 (減法後面那串的結果的小數點會被捨去，相剪出來的值會大於實際可以轉出的值，所以這種算法會有錯):
         // uint256 amountOut = originTokenOut - (originTokenOut * originTokenIn / (originTokenIn + amountIn)) ;
 
         // 算法2:
@@ -81,13 +81,18 @@ contract SimpleSwap is ISimpleSwap, ERC20, ReentrancyGuard {
             "SimpleSwap: UNEXPECTED_K"
         );
 
-        // should be able to swap from tokenA to tokenB / tokenB to tokenA
+        // Update reserves
+        if (tokenIn == address(tokenA)) {
+            reserveA = tokenA.balanceOf(address(this)) + amountIn;
+            reserveB = tokenB.balanceOf(address(this)) - amountOut;
+        } else if (tokenIn == address(tokenB)) {
+            reserveA = tokenA.balanceOf(address(this)) - amountOut;
+            reserveB = tokenB.balanceOf(address(this)) + amountIn;
+        }
+
+        // Action swap
         ERC20(tokenIn).transferFrom(sender, address(this), amountIn);
         ERC20(tokenOut).transfer(sender, amountOut);
-
-        // Update reserves
-        reserveA = tokenA.balanceOf(address(this));
-        reserveB = tokenB.balanceOf(address(this));
 
         emit Swap(sender, tokenIn, tokenOut, amountIn, amountOut);
 
@@ -126,12 +131,13 @@ contract SimpleSwap is ISimpleSwap, ERC20, ReentrancyGuard {
             _actualAmountBIn = (_liquidity * reserveB) / _totalSupply;
         }
 
+        // Update reserves
+        reserveA = tokenA.balanceOf(address(this)) + _actualAmountAIn;
+        reserveB = tokenB.balanceOf(address(this)) + _actualAmountBIn;
+
+        // Action transfer in
         tokenA.transferFrom(_sender, address(this), _actualAmountAIn);
         tokenB.transferFrom(_sender, address(this), _actualAmountBIn);
-
-        // Update reserves
-        reserveA = tokenA.balanceOf(address(this));
-        reserveB = tokenB.balanceOf(address(this));
 
         _mint(_sender, _liquidity);
 
@@ -156,12 +162,13 @@ contract SimpleSwap is ISimpleSwap, ERC20, ReentrancyGuard {
         _transfer(_sender, address(this), liquidity);
         _burn(address(this), liquidity);
 
+        // Update reserves
+        reserveA = tokenA.balanceOf(address(this)) - _amountAOut;
+        reserveB = tokenB.balanceOf(address(this)) - _amountBOut;
+
+        // Action transfer out
         tokenA.transfer(_sender, _amountAOut);
         tokenB.transfer(_sender, _amountBOut);
-
-        // Update reserves
-        reserveA = tokenA.balanceOf(address(this));
-        reserveB = tokenB.balanceOf(address(this));
 
         emit RemoveLiquidity(_sender, _amountAOut, _amountBOut, liquidity);
 
