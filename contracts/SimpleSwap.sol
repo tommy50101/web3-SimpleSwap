@@ -58,7 +58,7 @@ contract SimpleSwap is ISimpleSwap, ERC20, ReentrancyGuard {
         uint256 _originTokenIn = ERC20(_tokenIn).balanceOf(address(this));
         uint256 _originTokenOut = ERC20(_tokenOut).balanceOf(address(this));
 
-        // 算法1 (減法後面那串的結果的小數點會被捨去，相剪出來的值會大於實際可以轉出的值，所以這種算法會有錯):
+        // 算法1: (減法後面那串的結果的小數點會被捨去，相剪出來的值會大於實際可以轉出的值，所以這種算法會有錯):
         // uint256 _amountOut = _originTokenOut - (_originTokenOut * _originTokenIn / (_originTokenIn + _amountIn)) ;
 
         // 算法2:
